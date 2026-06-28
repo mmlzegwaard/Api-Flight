@@ -1,0 +1,13 @@
+{
+  "name": "api-flight",
+  "version": "1.0.0",
+  "description": "Simple website with API to initialize SQLite database, insert records by dynamic column name, and read records.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
+  }
+}
