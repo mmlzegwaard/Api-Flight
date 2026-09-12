@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Flight - DB Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    .row { margin-bottom: 1rem; }
+    input, button { padding: .6rem; font-size: 1rem; }
+    input { width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; margin-right: .5rem; }
+    pre { background: #f5f5f5; padding: 1rem; border-radius: 8px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Database API Demo</h1>
+
+  <div class="row">
+    <button id="initBtn">Init database/tabel</button>
+    <button id="readBtn">Lees records</button>
+  </div>
+
+  <div class="row">
+    <label for="columnName">Kolomnaam</label>
+    <input id="columnName" placeholder="bijv. naam" />
+  </div>
+
+  <div class="row">
+    <label for="value">String waarde</label>
+    <input id="value" placeholder="bijv. Jan" />
+  </div>
+
+  <div class="row">
+    <button id="saveBtn">Opslaan via API</button>
+  </div>
+
+  <h2>Output</h2>
+  <pre id="output">Nog geen data...</pre>
+
+  <script>
+    const output = document.getElementById("output");
+
+    async function callApi(url, method = "GET", body) {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      return res.json();
+    }
+
+    document.getElementById("initBtn").addEventListener("click", async () => {
+      const data = await callApi("/api/init", "POST");
+      output.textContent = JSON.stringify(data, null, 2);
+    });
+
+    document.getElementById("saveBtn").addEventListener("click", async () => {
+      const columnName = document.getElementById("columnName").value.trim();
+      const value = document.getElementById("value").value;
+
+      const data = await callApi("/api/record", "POST", { columnName, value });
+      output.textContent = JSON.stringify(data, null, 2);
+    });
+
+    document.getElementById("readBtn").addEventListener("click", async () => {
+      const data = await callApi("/api/records");
+      output.textContent = JSON.stringify(data, null, 2);
+    });
+  </script>
+</body>
+</html>
