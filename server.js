@@ -27,42 +27,39 @@ function ensureRecordsTable(callback) {
   db.run(sql, callback);
 }
 
-function ensureColumnExists(columnName, callback) {
+function enqueueSchemaTask(task, callback) {
   const queued = schemaChangeQueue
     .catch(() => {})
-    .then(
-      () =>
-        new Promise((resolve, reject) => {
-          db.all("PRAGMA table_info(records)", [], (columnsErr, columns) => {
-            if (columnsErr) {
-              reject(columnsErr);
-              return;
-            }
-
-            const columnExists = columns.some((col) => col.name === columnName);
-            if (columnExists) {
-              resolve();
-              return;
-            }
-
-            const alterSql = `ALTER TABLE records ADD COLUMN ${columnName} TEXT`;
-            db.run(alterSql, (alterErr) => {
-              if (alterErr && !String(alterErr.message).includes("duplicate column name")) {
-                reject(alterErr);
-                return;
-              }
-              resolve();
-            });
-          });
-        })
-    );
+    .then(() => new Promise(task));
 
   schemaChangeQueue = queued;
   queued.then(() => callback(null)).catch((err) => callback(err));
 }
 
-function waitForSchemaQueue(callback) {
-  schemaChangeQueue.catch(() => {}).then(() => callback());
+function ensureColumnExists(columnName, callback) {
+  enqueueSchemaTask((resolve, reject) => {
+    db.all("PRAGMA table_info(records)", [], (columnsErr, columns) => {
+      if (columnsErr) {
+        reject(columnsErr);
+        return;
+      }
+
+      const columnExists = columns.some((col) => col.name === columnName);
+      if (columnExists) {
+        resolve();
+        return;
+      }
+
+      const alterSql = `ALTER TABLE records ADD COLUMN ${columnName} TEXT`;
+      db.run(alterSql, (alterErr) => {
+        if (alterErr && !String(alterErr.message).includes("duplicate column name")) {
+          reject(alterErr);
+          return;
+        }
+        resolve();
+      });
+    });
+  }, callback);
 }
 
 // 1) Maak database/tabel aan
@@ -71,7 +68,10 @@ app.post("/api/init", (req, res) => {
     if (err) {
       return res.status(500).json({ error: err.message });
     }
-    waitForSchemaQueue(() => {
+    enqueueSchemaTask((resolve) => resolve(), (queueErr) => {
+      if (queueErr) {
+        return res.status(500).json({ error: queueErr.message });
+      }
       res.json({ ok: true, message: "Database/tabel is klaar." });
     });
   });
@@ -120,7 +120,11 @@ app.get("/api/records", (req, res) => {
       return res.status(500).json({ error: tableErr.message });
     }
 
-    waitForSchemaQueue(() => {
+    enqueueSchemaTask((resolve) => resolve(), (queueErr) => {
+      if (queueErr) {
+        return res.status(500).json({ error: queueErr.message });
+      }
+
       db.all("SELECT * FROM records ORDER BY id DESC", [], (err, rows) => {
         if (err) {
           return res.status(500).json({ error: err.message });
