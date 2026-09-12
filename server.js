@@ -61,13 +61,19 @@ function ensureColumnExists(columnName, callback) {
   queued.then(() => callback(null)).catch((err) => callback(err));
 }
 
+function waitForSchemaQueue(callback) {
+  schemaChangeQueue.catch(() => {}).then(() => callback());
+}
+
 // 1) Maak database/tabel aan
 app.post("/api/init", (req, res) => {
   ensureRecordsTable((err) => {
     if (err) {
       return res.status(500).json({ error: err.message });
     }
-    res.json({ ok: true, message: "Database/tabel is klaar." });
+    waitForSchemaQueue(() => {
+      res.json({ ok: true, message: "Database/tabel is klaar." });
+    });
   });
 });
 
