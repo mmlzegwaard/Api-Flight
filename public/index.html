@@ -10,7 +10,9 @@
     input, button { padding: .6rem; font-size: 1rem; }
     input { width: 100%; box-sizing: border-box; }
     button { cursor: pointer; margin-right: .5rem; }
-    pre { background: #f5f5f5; padding: 1rem; border-radius: 8px; overflow: auto; }
+    pre { background: #f5f5f5; padding: 1rem; border-radius: 8px; overflow: auto; border: 1px solid transparent; }
+    pre.success { border-color: #2e7d32; background: #f1faf2; }
+    pre.error { border-color: #c62828; background: #fff4f4; color: #8b1c1c; }
   </style>
 </head>
 <body>
@@ -40,45 +42,140 @@
 
   <script>
     const output = document.getElementById("output");
+    const columnNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+    function formatData(data) {
+      if (typeof data === "string") {
+        return data;
+      }
+      if (data === undefined) {
+        return "";
+      }
+      try {
+        return JSON.stringify(data, null, 2);
+      } catch {
+        return String(data);
+      }
+    }
+
+    function setOutputState(type, title, details) {
+      output.classList.remove("success", "error");
+      if (type === "success" || type === "error") {
+        output.classList.add(type);
+      }
+      const detailText = details ? `\n${formatData(details)}` : "";
+      output.textContent = `${title}${detailText}`;
+    }
+
+    function extractErrorMessage(payload, fallbackText) {
+      if (payload && typeof payload === "object") {
+        if (typeof payload.error === "string" && payload.error.trim()) return payload.error;
+        if (typeof payload.message === "string" && payload.message.trim()) return payload.message;
+      }
+      if (typeof payload === "string" && payload.trim()) return payload;
+      if (fallbackText && fallbackText.trim()) return fallbackText;
+      return "Onbekende fout.";
+    }
 
     async function callApi(url, method = "GET", body) {
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined
-      });
-      const text = await res.text();
-      let data;
-
+      let res;
       try {
-        data = text ? JSON.parse(text) : {};
+        res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          status: 0,
+          error: `Netwerkfout: ${err?.message || "Kan server niet bereiken."}`
+        };
+      }
+
+      let rawText = "";
+      try {
+        rawText = await res.text();
       } catch {
-        data = { error: text || "Onverwachte server response." };
+        rawText = "";
+      }
+
+      let data = {};
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = rawText;
+        }
       }
 
       if (!res.ok) {
-        return { ok: false, ...data };
+        const message = extractErrorMessage(data, rawText || res.statusText);
+        return {
+          ok: false,
+          status: res.status,
+          error: `HTTP ${res.status}: ${message}`,
+          details: typeof data === "string" ? { response: data } : data
+        };
       }
 
-      return data;
+      return {
+        ok: true,
+        status: res.status,
+        data
+      };
     }
 
     document.getElementById("initBtn").addEventListener("click", async () => {
-      const data = await callApi("/api/init", "POST");
-      output.textContent = JSON.stringify(data, null, 2);
+      const result = await callApi("/api/init", "POST");
+      if (!result.ok) {
+        setOutputState("error", "Initialiseren mislukt.", {
+          fout: result.error,
+          details: result.details || null
+        });
+        return;
+      }
+      setOutputState("success", "Database/tabel geïnitialiseerd.", result.data);
     });
 
     document.getElementById("saveBtn").addEventListener("click", async () => {
       const columnName = document.getElementById("columnName").value.trim();
       const value = document.getElementById("value").value;
 
-      const data = await callApi("/api/record", "POST", { columnName, value });
-      output.textContent = JSON.stringify(data, null, 2);
+      if (!columnName) {
+        setOutputState("error", "Opslaan geblokkeerd.", "Kolomnaam is verplicht.");
+        return;
+      }
+      if (!columnNamePattern.test(columnName)) {
+        setOutputState(
+          "error",
+          "Opslaan geblokkeerd.",
+          "Ongeldige kolomnaam. Gebruik alleen letters/cijfers/underscore en begin niet met een cijfer."
+        );
+        return;
+      }
+
+      const result = await callApi("/api/record", "POST", { columnName, value });
+      if (!result.ok) {
+        setOutputState("error", "Opslaan mislukt.", {
+          fout: result.error,
+          details: result.details || null
+        });
+        return;
+      }
+      setOutputState("success", "Record opgeslagen.", result.data);
     });
 
     document.getElementById("readBtn").addEventListener("click", async () => {
-      const data = await callApi("/api/records");
-      output.textContent = JSON.stringify(data, null, 2);
+      const result = await callApi("/api/records");
+      if (!result.ok) {
+        setOutputState("error", "Lezen mislukt.", {
+          fout: result.error,
+          details: result.details || null
+        });
+        return;
+      }
+      setOutputState("success", "Records opgehaald.", result.data);
     });
   </script>
 </body>
