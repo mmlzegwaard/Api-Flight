@@ -16,15 +16,19 @@ function sanitizeColumnName(name) {
   return name;
 }
 
-// 1) Maak database/tabel aan
-app.post("/api/init", (req, res) => {
+function ensureRecordsTable(callback) {
   const sql = `
     CREATE TABLE IF NOT EXISTS records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `;
-  db.run(sql, (err) => {
+  db.run(sql, callback);
+}
+
+// 1) Maak database/tabel aan
+app.post("/api/init", (req, res) => {
+  ensureRecordsTable((err) => {
     if (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -47,31 +51,45 @@ app.post("/api/record", (req, res) => {
     return res.status(400).json({ error: "Waarde moet een string zijn." });
   }
 
-  // Kolom toevoegen als deze nog niet bestaat
-  const alterSql = `ALTER TABLE records ADD COLUMN ${safeColumn} TEXT`;
-  db.run(alterSql, (alterErr) => {
-    // Duplicate column name negeren
-    if (alterErr && !String(alterErr.message).includes("duplicate column name")) {
-      return res.status(500).json({ error: alterErr.message });
+  ensureRecordsTable((tableErr) => {
+    if (tableErr) {
+      return res.status(500).json({ error: tableErr.message });
     }
 
-    const insertSql = `INSERT INTO records (${safeColumn}) VALUES (?)`;
-    db.run(insertSql, [value], function (insertErr) {
-      if (insertErr) {
-        return res.status(500).json({ error: insertErr.message });
-      }
-      res.json({ ok: true, id: this.lastID });
+    db.serialize(() => {
+      // Kolom toevoegen als deze nog niet bestaat
+      const alterSql = `ALTER TABLE records ADD COLUMN ${safeColumn} TEXT`;
+      db.run(alterSql, (alterErr) => {
+        // Duplicate column name negeren
+        if (alterErr && !String(alterErr.message).includes("duplicate column name")) {
+          return res.status(500).json({ error: alterErr.message });
+        }
+
+        const insertSql = `INSERT INTO records (${safeColumn}) VALUES (?)`;
+        db.run(insertSql, [value], function (insertErr) {
+          if (insertErr) {
+            return res.status(500).json({ error: insertErr.message });
+          }
+          res.json({ ok: true, id: this.lastID });
+        });
+      });
     });
   });
 });
 
 // 3) Lees alle records uit
 app.get("/api/records", (req, res) => {
-  db.all("SELECT * FROM records ORDER BY id DESC", [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
+  ensureRecordsTable((tableErr) => {
+    if (tableErr) {
+      return res.status(500).json({ error: tableErr.message });
     }
-    res.json({ ok: true, rows });
+
+    db.all("SELECT * FROM records ORDER BY id DESC", [], (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ ok: true, rows });
+    });
   });
 });
 

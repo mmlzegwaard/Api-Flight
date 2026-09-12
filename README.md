@@ -14,6 +14,8 @@ npm start
 
 Open daarna: `http://localhost:3000`
 
+De tabel wordt automatisch aangemaakt bij de eerste API-call. `POST /api/init` kan nog steeds handmatig gebruikt worden.
+
 ## API endpoints
 
 ### `POST /api/init`
