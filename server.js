@@ -33,10 +33,21 @@ function enqueueSchemaTask(task, callback) {
     .then(() => new Promise(task));
 
   schemaChangeQueue = queued;
-  queued.then(() => callback(null)).catch((err) => callback(err));
+  queued.then((result) => callback(null, result)).catch((err) => callback(err));
 }
 
-function ensureColumnExists(columnName, callback) {
+function insertRecordQueued(columnName, value, callback) {
+  function runInsert(resolve, reject) {
+    const insertSql = `INSERT INTO records (${columnName}) VALUES (?)`;
+    db.run(insertSql, [value], function (insertErr) {
+      if (insertErr) {
+        reject(insertErr);
+        return;
+      }
+      resolve(this.lastID);
+    });
+  }
+
   enqueueSchemaTask((resolve, reject) => {
     db.all("PRAGMA table_info(records)", [], (columnsErr, columns) => {
       if (columnsErr) {
@@ -46,7 +57,7 @@ function ensureColumnExists(columnName, callback) {
 
       const columnExists = columns.some((col) => col.name === columnName);
       if (columnExists) {
-        resolve();
+        runInsert(resolve, reject);
         return;
       }
 
@@ -56,7 +67,7 @@ function ensureColumnExists(columnName, callback) {
           reject(alterErr);
           return;
         }
-        resolve();
+        runInsert(resolve, reject);
       });
     });
   }, callback);
@@ -97,18 +108,11 @@ app.post("/api/record", (req, res) => {
       return res.status(500).json({ error: tableErr.message });
     }
 
-    ensureColumnExists(safeColumn, (columnErr) => {
-      if (columnErr) {
-        return res.status(500).json({ error: columnErr.message });
+    insertRecordQueued(safeColumn, value, (insertErr, lastID) => {
+      if (insertErr) {
+        return res.status(500).json({ error: insertErr.message });
       }
-
-      const insertSql = `INSERT INTO records (${safeColumn}) VALUES (?)`;
-      db.run(insertSql, [value], function (insertErr) {
-        if (insertErr) {
-          return res.status(500).json({ error: insertErr.message });
-        }
-        res.json({ ok: true, id: this.lastID });
-      });
+      res.json({ ok: true, id: lastID });
     });
   });
 });
