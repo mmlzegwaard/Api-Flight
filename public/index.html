@@ -63,7 +63,7 @@
       if (type === "success" || type === "error") {
         output.classList.add(type);
       }
-      const detailText = details ? `\n${formatData(details)}` : "";
+      const detailText = details === undefined ? "" : `\n${formatData(details)}`;
       output.textContent = `${title}${detailText}`;
     }
 
@@ -80,10 +80,11 @@
     async function callApi(url, method = "GET", body) {
       let res;
       try {
+        const hasBody = body !== undefined;
         res = await fetch(url, {
           method,
-          headers: { "Content-Type": "application/json" },
-          body: body ? JSON.stringify(body) : undefined
+          headers: hasBody ? { "Content-Type": "application/json" } : undefined,
+          body: hasBody ? JSON.stringify(body) : undefined
         });
       } catch (err) {
         return {
