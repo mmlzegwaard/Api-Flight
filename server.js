@@ -4,6 +4,7 @@ const sqlite3 = require("sqlite3").verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+let schemaChangeQueue = Promise.resolve();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
@@ -24,6 +25,40 @@ function ensureRecordsTable(callback) {
     )
   `;
   db.run(sql, callback);
+}
+
+function ensureColumnExists(columnName, callback) {
+  const queued = schemaChangeQueue
+    .catch(() => {})
+    .then(
+      () =>
+        new Promise((resolve, reject) => {
+          db.all("PRAGMA table_info(records)", [], (columnsErr, columns) => {
+            if (columnsErr) {
+              reject(columnsErr);
+              return;
+            }
+
+            const columnExists = columns.some((col) => col.name === columnName);
+            if (columnExists) {
+              resolve();
+              return;
+            }
+
+            const alterSql = `ALTER TABLE records ADD COLUMN ${columnName} TEXT`;
+            db.run(alterSql, (alterErr) => {
+              if (alterErr && !String(alterErr.message).includes("duplicate column name")) {
+                reject(alterErr);
+                return;
+              }
+              resolve();
+            });
+          });
+        })
+    );
+
+  schemaChangeQueue = queued;
+  queued.then(() => callback(null)).catch((err) => callback(err));
 }
 
 // 1) Maak database/tabel aan
@@ -56,22 +91,17 @@ app.post("/api/record", (req, res) => {
       return res.status(500).json({ error: tableErr.message });
     }
 
-    db.serialize(() => {
-      // Kolom toevoegen als deze nog niet bestaat
-      const alterSql = `ALTER TABLE records ADD COLUMN ${safeColumn} TEXT`;
-      db.run(alterSql, (alterErr) => {
-        // Duplicate column name negeren
-        if (alterErr && !String(alterErr.message).includes("duplicate column name")) {
-          return res.status(500).json({ error: alterErr.message });
-        }
+    ensureColumnExists(safeColumn, (columnErr) => {
+      if (columnErr) {
+        return res.status(500).json({ error: columnErr.message });
+      }
 
-        const insertSql = `INSERT INTO records (${safeColumn}) VALUES (?)`;
-        db.run(insertSql, [value], function (insertErr) {
-          if (insertErr) {
-            return res.status(500).json({ error: insertErr.message });
-          }
-          res.json({ ok: true, id: this.lastID });
-        });
+      const insertSql = `INSERT INTO records (${safeColumn}) VALUES (?)`;
+      db.run(insertSql, [value], function (insertErr) {
+        if (insertErr) {
+          return res.status(500).json({ error: insertErr.message });
+        }
+        res.json({ ok: true, id: this.lastID });
       });
     });
   });
