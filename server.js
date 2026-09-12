@@ -120,11 +120,13 @@ app.get("/api/records", (req, res) => {
       return res.status(500).json({ error: tableErr.message });
     }
 
-    db.all("SELECT * FROM records ORDER BY id DESC", [], (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json({ ok: true, rows });
+    waitForSchemaQueue(() => {
+      db.all("SELECT * FROM records ORDER BY id DESC", [], (err, rows) => {
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+        res.json({ ok: true, rows });
+      });
     });
   });
 });
